@@ -48,7 +48,7 @@ fn load_design(index: usize) -> Result<(Vec<Triangle>, Vec3, f64), String> {
 
 fn main() {
     let mut window = Window::new(
-        "Cuerpos celestes - SOLARIA [WIREframe]",
+        "Cuerpos celestes - SOLARIA [SOLIDO]",
         WINDOW_WIDTH,
         WINDOW_HEIGHT,
         WindowOptions::default(),
@@ -59,7 +59,9 @@ fn main() {
     let mut angle_y = 0.0f64;
     let mut angle_x = 0.0f64;
     let mut automatic = true;
+    let mut wireframe = false;
     let mut buffer = vec![0u32; WINDOW_WIDTH * WINDOW_HEIGHT];
+    let mut depth = vec![0.0; buffer.len()];
     let start = Instant::now();
     let mut previous = 0.0;
 
@@ -80,10 +82,14 @@ fn main() {
         if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) {
             automatic = !automatic;
         }
+        if window.is_key_pressed(Key::T, minifb::KeyRepeat::No) {
+            wireframe = !wireframe;
+        }
+        let now = start.elapsed().as_secs_f64();
+        let dt = (now - previous).min(0.1);
+        previous = now;
         if automatic {
-            let now = start.elapsed().as_secs_f64();
-            angle_y += (now - previous).min(0.1) * 0.8;
-            previous = now;
+            angle_y += dt * 0.8;
         } else {
             if window.is_key_down(Key::Left) {
                 angle_y -= 0.03;
@@ -99,11 +105,13 @@ fn main() {
             }
         }
         window.set_title(&format!(
-            "Cuerpos celestes - {} [WIRE] [{}]",
+            "Cuerpos celestes - {} [{}] [{}]",
             DESIGNS[selected],
+            if wireframe { "WIRE" } else { "SOLIDO" },
             if automatic { "AUTO" } else { "MANUAL" }
         ));
         buffer.fill(0x000000);
+        depth.fill(0.0);
         let (triangles, center, radius) = &loaded;
         let scale = WINDOW_WIDTH as f64 * 0.38 / radius.max(0.001);
         let (cos_y, sin_y) = (angle_y.cos(), angle_y.sin());
@@ -124,10 +132,55 @@ fn main() {
                 transform(triangle.v3),
                 0xFFFFFF,
             );
-            dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
+            if wireframe {
+                dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
+            } else {
+                dibujar_triangulo_relleno(
+                    &mut buffer,
+                    &mut depth,
+                    WINDOW_WIDTH,
+                    WINDOW_HEIGHT,
+                    &rendered,
+                    scale,
+                    400.0,
+                    300.0,
+                );
+            }
         }
         window
             .update_with_buffer(&buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod viewer_tests {
+    use super::*;
+
+    #[test]
+    fn all_designs_load_and_render_solid() {
+        for index in 0..DESIGNS.len() {
+            let (triangles, center, radius) = load_design(index).unwrap();
+            assert!(radius.is_finite() && radius > 0.0);
+            let mut pixels = vec![0; 128 * 128];
+            let mut depth = vec![0.0; pixels.len()];
+            for t in triangles {
+                let transform = |v: Vec3| v.sub(center).add(Vec3::new(0.0, 0.0, -8.0));
+                let t = Triangle::new(transform(t.v1), transform(t.v2), transform(t.v3), 0xFFFFFF);
+                dibujar_triangulo_relleno(
+                    &mut pixels,
+                    &mut depth,
+                    128,
+                    128,
+                    &t,
+                    48.0 / radius,
+                    64.0,
+                    64.0,
+                );
+            }
+            assert!(pixels.contains(&0xFFFFFF), "{}", DESIGNS[index]);
+            assert!(pixels.iter().all(|&p| p == 0 || p == 0xFFFFFF));
+            assert!(depth.iter().all(|q| q.is_finite()));
+        }
     }
 }

@@ -42,7 +42,8 @@ def build(name, pieces):
     for filename, location in pieces:
         objects = import_obj(os.path.join(ASSETS, filename))
         for obj in objects:
-            obj.location = Vector(location)
+            # All archive pieces already use their assembled scene coordinates.
+            obj.location = Vector((0, 0, 0))
             obj.name = os.path.splitext(filename)[0]
             for old in list(obj.users_collection):
                 old.objects.unlink(obj)

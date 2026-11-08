@@ -2,6 +2,7 @@
 name = "lab_6_carga_de_modelo"
 version = "0.1.0"
 edition = "2024"
+default-run = "lab_6_carga_de_modelo"
 
 [dependencies]
 minifb = "0.29"

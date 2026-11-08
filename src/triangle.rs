@@ -344,6 +344,9 @@ impl Vec3 {
             z: self.z + otro.z,
         }
     }
+    pub fn scale(self, factor: f64) -> Vec3 {
+        Vec3::new(self.x * factor, self.y * factor, self.z * factor)
+    }
     pub fn dot(self, otro: Vec3) -> f64 {
         self.x * otro.x + self.y * otro.y + self.z * otro.z
     }

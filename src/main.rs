@@ -150,7 +150,7 @@ fn main() {
             DESIGNS[selected],
             if wireframe {
                 "WIRE"
-            } else if shaders_enabled && (selected < 3 || mode != techniques::Mode::Crystal) {
+            } else if shaders_enabled {
                 mode.name()
             } else {
                 "SOLIDO"
@@ -187,7 +187,7 @@ fn main() {
             );
             if wireframe {
                 dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
-            } else if shaders_enabled && (selected < 3 || mode != techniques::Mode::Crystal) {
+            } else if shaders_enabled {
                 let local = [triangle.v1, triangle.v2, triangle.v3];
                 let world = [rendered.v1, rendered.v2, rendered.v3];
                 let normals = triangle.normals.map(rotate);
@@ -238,7 +238,7 @@ fn main() {
 fn capture_previews() {
     let out = std::path::Path::new("assets/previews");
     std::fs::create_dir_all(out).unwrap();
-    for index in 0..3 {
+    for index in 0..DESIGNS.len() {
         let modes = if std::env::args().any(|arg| arg == "--capture-techniques") {
             techniques::Mode::ALL.to_vec()
         } else {
@@ -328,7 +328,7 @@ mod viewer_tests {
 
     #[test]
     fn procedural_previews_are_colored_and_order_independent() {
-        for index in 0..3 {
+        for index in 0..DESIGNS.len() {
             let pixels = shader_preview(index, false);
             let reversed = shader_preview(index, true);
             // Shared triangle edges can differ by one quantization level.

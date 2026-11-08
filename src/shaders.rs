@@ -65,8 +65,30 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
         n = n.scale(-1.0);
     }
     let light = Vec3::new(-0.5, 0.7, 1.0).normalize();
-    let emissive = design == 0;
-    let base = if part == 1 || part == 3 {
+    let emissive = design == 0 || part == 7;
+    let base = if part == 4 {
+        // Iris uses its own circular mesh; positions are scene-local XY.
+        let radius = (p.x * p.x + p.y * p.y).sqrt() / 0.435;
+        let angle = p.y.atan2(p.x);
+        let filaments =
+            (angle * 72.0 + radius * 18.0 + (radius * 28.0).sin() * 1.8).sin() * 0.5 + 0.5;
+        let c = mix(MINT, [0.49, 0.25, 0.75], filaments);
+        let limbus = smooth(0.83, 1.0, radius);
+        let c = mix(c, [0.26, 0.18, 0.45], limbus * 0.8);
+        let gold = smooth(0.985, 1.0, (angle * 25.0 + radius * 7.0).sin()) * 0.55;
+        let c = mix(c, GOLD, gold);
+        mix([0.055, 0.025, 0.12], c, smooth(0.23, 0.28, radius))
+    } else if part == 5 {
+        let flow = (p.x * 3.0 + p.y * 2.0).sin() * 0.5 + 0.5;
+        mix(mix(GOLD, PINK, flow * 0.7), CREAM, 0.22)
+    } else if part == 6 {
+        let c = mix(GOLD, PINK, 0.5 + 0.5 * (p.y * 12.0 + p.x * 9.0).sin());
+        mix(c, CREAM, smooth(0.3, 0.85, noise(p.scale(10.0))) * 0.55)
+    } else if part == 7 {
+        let waves = (p.y * 22.0 + noise(p.scale(13.0)) * 4.0).sin() * 0.5 + 0.5;
+        let c = mix([0.93, 0.57, 0.8], CREAM, waves);
+        mix(c, GOLD, smooth(0.83, 1.0, waves) * 0.5)
+    } else if part == 1 || part == 3 {
         let r = (p.x * p.x + p.z * p.z).sqrt();
         let stripes = (r * 170.0).sin() * 0.5 + 0.5;
         if part == 3 && stripes < 0.12 {
@@ -104,7 +126,7 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
                 let c = mix(mix(c, [0.31, 0.23, 0.43], basin * 0.65), CREAM, rim * 0.3);
                 mix(c, GOLD, smooth(0.79, 0.89, noise(p.scale(70.0))))
             }
-            _ => {
+            2 => {
                 let warp = noise(p.scale(5.0));
                 let latitude = p.y * 19.0 + (warp - 0.5) * 4.0;
                 let bands = latitude.sin() * 0.5 + 0.5;
@@ -123,6 +145,41 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
                 );
                 mix(c, CREAM, smooth(0.65, 0.84, noise(p.scale(17.0))) * 0.4)
             }
+            3 => {
+                let regions = noise(p.scale(2.5));
+                let c = mix(LAVENDER, PINK, regions);
+                let vein = 1.0 - smooth(0.009, 0.028, (noise(p.scale(6.0)) - 0.5).abs());
+                let c = mix(c, GOLD, vein * 0.75);
+                let blush = 0.5 + 0.5 * (p.y * 6.0 + p.x * 2.0).sin();
+                mix(c, CREAM, blush * 0.12)
+            }
+            4 => {
+                // Continuous coordinate field wraps the curved volume, including its back.
+                let wave =
+                    p.y * 17.0 + (p.x * 5.0 + p.z * 3.0).sin() * 2.3 + noise(p.scale(3.0)) * 2.0;
+                let band = wave.sin();
+                let c = mix(LAVENDER, PINK, 0.5 + 0.5 * (wave * 0.47).sin());
+                let paths = 1.0 - smooth(0.24, 0.4, band.abs());
+                let borders = (1.0 - smooth(0.025, 0.095, (band.abs() - 0.4).abs())) * 0.7;
+                let c = mix(c, MINT, paths * 0.85);
+                let c = mix(c, CREAM, borders);
+                let gilding = 1.0 - smooth(0.01, 0.035, (band - 0.72).abs());
+                mix(c, GOLD, gilding * 0.55)
+            }
+            5 => {
+                let r = (p.x * p.x + p.y * p.y).sqrt();
+                let angle = p.y.atan2(p.x);
+                // Integer angular frequency keeps the atan2 seam continuous.
+                let swirl = angle * 5.0 - r * 13.0 + p.z * 4.0 + noise(p.scale(3.0)) * 1.5;
+                let wave = swirl.sin();
+                let c = mix(LAVENDER, PINK, wave * 0.5 + 0.5);
+                let cream = smooth(0.55, 0.85, wave);
+                let c = mix(c, CREAM, cream * 0.75);
+                let gold = 1.0 - smooth(0.015, 0.065, (wave + 0.4).abs());
+                let c = mix(c, GOLD, gold * 0.8);
+                mix(c, MINT, smooth(0.7, 0.9, noise(p.scale(8.0))) * 0.25)
+            }
+            _ => LAVENDER,
         }
     };
     let diffuse = if emissive {

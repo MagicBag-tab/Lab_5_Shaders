@@ -190,6 +190,14 @@ impl Mesh {
                     2
                 } else if name.contains("anillo") {
                     3
+                } else if name.contains("iris") {
+                    4
+                } else if name.contains("arco") {
+                    5
+                } else if name.contains("fragmento") {
+                    6
+                } else if name.contains("nucleo") {
+                    7
                 } else {
                     0
                 };

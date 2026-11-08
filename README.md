@@ -8,7 +8,7 @@ luz para que la diferencia visible provenga del cálculo y la interpolación.
 
 | Tecla | Modo | Cálculo |
 |---|---|---|
-| `F1` | Cristal original | Shaders artísticos de los tres cuerpos obligatorios; extras aún blancos |
+| `F1` | Cristal | Shaders artísticos de los seis cuerpos y sus accesorios |
 | `F2` | Flat | Normal geométrica y luz una vez por cara; color constante en el triángulo |
 | `F3` | Gouraud | Luz y especular por vértice; interpolación del color con perspectiva |
 | `F4` | Phong | Normal interpolada y normalizada; difuso y especular por fragmento con vector reflejado |
@@ -25,7 +25,7 @@ lee una copia del frame para evitar modificar los vecinos mientras los procesa.
 `mix`, `smoothstep`, ruido y fBm calculan patrones locales, sin imágenes ni MTL.
 La disolución es un recorte geométrico aparente, no transparencia real.
 
-Para generar 21 capturas reales (siete modos por cada cuerpo obligatorio):
+Para generar 42 capturas reales (siete modos por cada uno de los seis cuerpos):
 
 ```powershell
 cargo run --release -- --capture-techniques
@@ -49,7 +49,7 @@ Ejecutar desde la raíz con `cargo run --release`.
 | Tecla | Acción actual |
 |---|---|
 | `1`, `2`, `3` | Solaria, Lunaria y Aurelia con shaders |
-| `4`, `5`, `6` | Ocularis, Labyrinthia y Vortex, todavía monocromáticos |
+| `4`, `5`, `6` | Ocularis, Labyrinthia y Vortex con shaders |
 | `S` | Activar/desactivar shaders para comparar con el sólido blanco |
 | `T` | Alternar sólido y wireframe |
 | `ESPACIO` | Rotación automática/manual |
@@ -66,6 +66,9 @@ Capas de color de esta fase:
 | Luna | Base violeta gris, variación mineral, cuencas oscuras, bordes crema y acabado pulido propio. |
 | Aurelia | Base lavanda, bandas rosa por latitud, perturbación por ruido, bandas azules/crema, tormenta ovalada y nubes claras. |
 | Anillos | Franjas radiales oro/menta/crema, huecos por descarte de fragmentos y brillo. Comparten Z-buffer con la esfera. |
+| Ocularis | Base lavanda/rosa, variaciones suaves crema, vetas doradas y acabado especular/Fresnel. Iris separado con base menta, filamentos radiales violetas, vetas oro, borde oscuro y pupila central. Arcos con oro, rosa, crema y reflejos. |
+| Labyrinthia | Base rosa/lavanda, caminos ondulados menta, contornos crema, líneas doradas y acabado nacarado. Tres fragmentos separados con oro, rosa, variación crema y brillo. La abertura pertenece a la geometría. |
+| Vórtex | Cascarones con base lavanda, remolinos rosa, regiones crema, filamentos oro y matices menta. Núcleo emisivo con base rosa, ondas crema y crestas doradas. Anillo con franjas y huecos procedurales. |
 
 El acabado de vidrio se simula con especular blanco, tinte según la orientación
 respecto a la cámara y realce Fresnel del borde. Las superficies son opacas:
@@ -79,14 +82,15 @@ Capturas reales del framebuffer CPU, a 800 × 600, sin abrir ventana:
 cargo run --release -- --capture
 ```
 
-Resultados: `assets/previews/solaria.bmp`, `lunaria.bmp` y `aurelia.bmp`.
+Resultados en `assets/previews/`: `solaria.bmp`, `lunaria.bmp`, `aurelia.bmp`,
+`ocularis.bmp`, `labyrinthia.bmp` y `vortex.bmp`.
 La cámara queda frontal y sin animación para facilitar comparaciones. Son
 capturas del rasterizador del programa, no renders de Blender.
 
 Verificación: `cargo fmt --check`, `cargo check`, `cargo test`. Las pruebas
 incluyen los seis OBJ, normales, independencia del orden de dibujo y variación
-de color en los tres shaders. Los extras quedan pendientes de revisión de esta fase;
-su aceptación como planetas adicionales depende del docente.
+de color en los seis shaders. La aceptación de las siluetas de fantasía como
+planetas adicionales depende del docente.
 
 ---
 

@@ -1,5 +1,33 @@
 # Lab 5 — Cuerpos celestes: fase de shaders obligatorios
 
+## Movimiento de accesorios
+
+`src/motion.rs` aplica transformaciones rígidas independientes a los accesorios:
+corona de Solaria (giro frontal), luna de Lunaria (órbita alrededor del eje Y),
+anillos de Aurelia y Vórtex (precesión lenta), fragmentos de Labyrinthia
+(flotación con tres fases distintas) y núcleo de Vórtex (giro propio).
+Ocularis conserva su montaje para mantener iris y arcos alineados.
+
+El visor inicia con la vista fija y los accesorios animados. `G` activa/desactiva
+el giro general; `A` pausa/reanuda únicamente los accesorios. `ESPACIO` pausa
+ambos movimientos y conserva esas preferencias al reanudar. `R` restaura la vista
+frontal y detiene el giro general. Las flechas permiten inspeccionar el conjunto
+en cualquier momento. Todas las velocidades,
+incluidas las flechas, usan tiempo transcurrido; el reloj se conserva al cambiar
+de cuerpo. Las normales reciben la misma rotación que su pieza y los patrones
+mantienen sus coordenadas locales originales. El encuadre incluye una esfera
+conservadora para la trayectoria completa y el desplazamiento de los fragmentos.
+
+Capturar un instante de la animación sin abrir ventana:
+
+```powershell
+cargo run --release -- --capture --time=8
+```
+
+El tiempo predeterminado es cero, que conserva el montaje original. Las capturas
+usan vista frontal fija; solo los accesorios avanzan al instante solicitado.
+Cada ejecución reemplaza las capturas del mismo nombre en `assets/previews/`.
+
 ## Comparación de técnicas de la presentación de shaders
 
 `src/techniques.rs` adapta los conceptos de la presentación a este rasterizador
@@ -52,8 +80,11 @@ Ejecutar desde la raíz con `cargo run --release`.
 | `4`, `5`, `6` | Ocularis, Labyrinthia y Vortex con shaders |
 | `S` | Activar/desactivar shaders para comparar con el sólido blanco |
 | `T` | Alternar sólido y wireframe |
-| `ESPACIO` | Rotación automática/manual |
-| Flechas | Rotar en modo manual |
+| `ESPACIO` | Pausa/reanuda las animaciones |
+| `G` | Activa/desactiva el giro general (inicia apagado) |
+| `A` | Activa/desactiva la animación independiente de accesorios |
+| `R` | Vuelve a la vista frontal y detiene el giro general |
+| Flechas | Rotar la vista en cualquier momento |
 | `ESC` | Salir |
 
 Capas de color de esta fase:

@@ -194,6 +194,10 @@ impl Mesh {
                     4
                 } else if name.contains("arco") {
                     5
+                } else if name.contains("fragmento_2") {
+                    8
+                } else if name.contains("fragmento_3") {
+                    9
                 } else if name.contains("fragmento") {
                     6
                 } else if name.contains("nucleo") {

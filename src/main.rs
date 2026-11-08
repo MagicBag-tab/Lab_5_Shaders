@@ -1,3 +1,4 @@
+mod motion;
 mod shaders;
 mod techniques;
 mod triangle;
@@ -37,14 +38,13 @@ fn load_design(index: usize) -> Result<(Vec<Triangle>, Vec3, f64), String> {
     if vertices.is_empty() {
         return Err("El diseño no contiene vértices".into());
     }
-    let center = vertices
-        .iter()
-        .fold(Vec3::new(0.0, 0.0, 0.0), |sum, &v| sum.add(v));
-    let center = center.scale(1.0 / vertices.len() as f64);
+    // Accessories orbit the archive's shared origin; fit their entire trajectory.
+    let center = Vec3::new(0.0, 0.0, 0.0);
     let radius = vertices
         .iter()
         .map(|&v| v.sub(center).length())
-        .fold(0.0, f64::max);
+        .fold(0.0, f64::max)
+        + 0.32;
     Ok((triangles, center, radius))
 }
 
@@ -64,7 +64,9 @@ fn main() {
     let mut loaded = load_design(selected).expect("No se pudieron cargar los OBJ");
     let mut angle_y = 0.0f64;
     let mut angle_x = 0.0f64;
-    let mut automatic = true;
+    let mut automatic = false;
+    let mut accessories = true;
+    let mut paused = false;
     let mut wireframe = false;
     let mut shaders_enabled = true;
     let mut mode = techniques::Mode::Crystal;
@@ -75,6 +77,7 @@ fn main() {
     let mut depth = vec![0.0; buffer.len()];
     let start = Instant::now();
     let mut previous = 0.0;
+    let mut animation_time = 0.0;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         for (key, index) in [
@@ -91,7 +94,18 @@ fn main() {
             }
         }
         if window.is_key_pressed(Key::Space, minifb::KeyRepeat::No) {
+            paused = !paused;
+        }
+        if window.is_key_pressed(Key::G, minifb::KeyRepeat::No) {
             automatic = !automatic;
+        }
+        if window.is_key_pressed(Key::A, minifb::KeyRepeat::No) {
+            accessories = !accessories;
+        }
+        if window.is_key_pressed(Key::R, minifb::KeyRepeat::No) {
+            angle_x = 0.0;
+            angle_y = 0.0;
+            automatic = false;
         }
         if window.is_key_pressed(Key::T, minifb::KeyRepeat::No) {
             wireframe = !wireframe;
@@ -129,24 +143,28 @@ fn main() {
         if window.is_key_down(Key::Equal) {
             dissolve = (dissolve + dt * 0.3).min(1.01);
         }
-        if automatic {
-            angle_y += dt * 0.8;
-        } else {
+        if accessories && !paused {
+            animation_time += dt;
+        }
+        if automatic && !paused {
+            angle_y += dt * 0.18;
+        }
+        {
             if window.is_key_down(Key::Left) {
-                angle_y -= 0.03;
+                angle_y -= dt * 1.5;
             }
             if window.is_key_down(Key::Right) {
-                angle_y += 0.03;
+                angle_y += dt * 1.5;
             }
             if window.is_key_down(Key::Up) {
-                angle_x -= 0.03;
+                angle_x -= dt * 1.5;
             }
             if window.is_key_down(Key::Down) {
-                angle_x += 0.03;
+                angle_x += dt * 1.5;
             }
         }
         window.set_title(&format!(
-            "Cuerpos celestes - {} [{}] [{}] [{}] discard={:.2}",
+            "Cuerpos celestes - {} [{}] [giro:{} accesorios:{}] [{}] discard={:.2}",
             DESIGNS[selected],
             if wireframe {
                 "WIRE"
@@ -155,7 +173,8 @@ fn main() {
             } else {
                 "SOLIDO"
             },
-            if automatic { "AUTO" } else { "MANUAL" },
+            if automatic && !paused { "ON" } else { "OFF" },
+            if accessories && !paused { "ON" } else { "OFF" },
             techniques::POST_NAMES[post],
             dissolve
         ));
@@ -165,7 +184,10 @@ fn main() {
         let scale = fit_scale(*radius);
         let (cos_y, sin_y) = (angle_y.cos(), angle_y.sin());
         let (cos_x, sin_x) = (angle_x.cos(), angle_x.sin());
+        let motions: [_; 10] =
+            std::array::from_fn(|part| motion::Motion::at(selected, part as u8, animation_time));
         for triangle in triangles {
+            let motion = motions[triangle.part as usize];
             let transform = |v: Vec3| {
                 let v = v.sub(*center);
                 let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
@@ -180,9 +202,9 @@ fn main() {
                 Vec3::new(y.x, y.y * cos_x - y.z * sin_x, y.y * sin_x + y.z * cos_x)
             };
             let rendered = Triangle::new(
-                transform(triangle.v1),
-                transform(triangle.v2),
-                transform(triangle.v3),
+                transform(motion.position(triangle.v1)),
+                transform(motion.position(triangle.v2)),
+                transform(motion.position(triangle.v3)),
                 0xFFFFFF,
             );
             if wireframe {
@@ -190,7 +212,7 @@ fn main() {
             } else if shaders_enabled {
                 let local = [triangle.v1, triangle.v2, triangle.v3];
                 let world = [rendered.v1, rendered.v2, rendered.v3];
-                let normals = triangle.normals.map(rotate);
+                let normals = triangle.normals.map(|v| rotate(motion.normal(v)));
                 let teaching = techniques::FaceShader::new(mode, world, normals, local, dissolve);
                 raster_shader(
                     &mut buffer,
@@ -236,6 +258,14 @@ fn main() {
 
 // Headless captures use the same CPU rasterizer and fragment shaders as the viewer.
 fn capture_previews() {
+    let seconds = std::env::args()
+        .find_map(|arg| arg.strip_prefix("--time=").map(str::to_owned))
+        .map(|v| {
+            v.parse::<f64>()
+                .expect("--time debe ser un numero de segundos")
+        })
+        .unwrap_or(0.0);
+    assert!(seconds.is_finite() && seconds >= 0.0);
     let out = std::path::Path::new("assets/previews");
     std::fs::create_dir_all(out).unwrap();
     for index in 0..DESIGNS.len() {
@@ -245,7 +275,7 @@ fn capture_previews() {
             vec![techniques::Mode::Crystal]
         };
         for mode in modes {
-            let pixels = shader_preview_mode(index, false, mode);
+            let pixels = shader_preview_frame(index, false, mode, seconds);
             let size = 800 * 600 * 3;
             let mut bmp = vec![0u8; 54];
             bmp[..2].copy_from_slice(b"BM");
@@ -284,7 +314,17 @@ fn shader_preview(index: usize, reverse: bool) -> Vec<u32> {
     shader_preview_mode(index, reverse, techniques::Mode::Crystal)
 }
 
+#[cfg(test)]
 fn shader_preview_mode(index: usize, reverse: bool, mode: techniques::Mode) -> Vec<u32> {
+    shader_preview_frame(index, reverse, mode, 0.0)
+}
+
+fn shader_preview_frame(
+    index: usize,
+    reverse: bool,
+    mode: techniques::Mode,
+    seconds: f64,
+) -> Vec<u32> {
     let (mut triangles, center, radius) = load_design(index).unwrap();
     if reverse {
         triangles.reverse();
@@ -292,10 +332,17 @@ fn shader_preview_mode(index: usize, reverse: bool, mode: techniques::Mode) -> V
     let mut pixels = vec![0x190D29; 800 * 600];
     let mut depth = vec![0.0; pixels.len()];
     for t in triangles {
+        let motion = motion::Motion::at(index, t.part, seconds);
         let local = [t.v1, t.v2, t.v3];
-        let world = local.map(|v| v.sub(center).add(Vec3::new(0.0, 0.0, -8.0)));
+        let world = local.map(|v| {
+            motion
+                .position(v)
+                .sub(center)
+                .add(Vec3::new(0.0, 0.0, -8.0))
+        });
+        let normals = t.normals.map(|v| motion.normal(v));
         let transformed = Triangle::new(world[0], world[1], world[2], 0);
-        let teaching = techniques::FaceShader::new(mode, world, t.normals, local, 0.5);
+        let teaching = techniques::FaceShader::new(mode, world, normals, local, 0.5);
         raster_shader(
             &mut pixels,
             &mut depth,
@@ -313,7 +360,7 @@ fn shader_preview_mode(index: usize, reverse: bool, mode: techniques::Mode) -> V
                     index,
                     t.part,
                     shaders::interpolate(local, w),
-                    shaders::interpolate(t.normals, w),
+                    shaders::interpolate(normals, w),
                     shaders::interpolate(world, w),
                 )
             },
@@ -325,6 +372,25 @@ fn shader_preview_mode(index: usize, reverse: bool, mode: techniques::Mode) -> V
 #[cfg(test)]
 mod viewer_tests {
     use super::*;
+
+    #[test]
+    fn accessory_motion_stays_in_frame_envelope() {
+        for index in 0..DESIGNS.len() {
+            let (triangles, center, radius) = load_design(index).unwrap();
+            for seconds in [0.0, 2.0, 8.0, 17.0, 41.0] {
+                for t in &triangles {
+                    let motion = motion::Motion::at(index, t.part, seconds);
+                    for v in [t.v1, t.v2, t.v3] {
+                        assert!(
+                            motion.position(v).sub(center).length() <= radius,
+                            "{} at {seconds}",
+                            DESIGNS[index]
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn procedural_previews_are_colored_and_order_independent() {

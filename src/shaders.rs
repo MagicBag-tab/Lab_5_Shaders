@@ -81,7 +81,7 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
     } else if part == 5 {
         let flow = (p.x * 3.0 + p.y * 2.0).sin() * 0.5 + 0.5;
         mix(mix(GOLD, PINK, flow * 0.7), CREAM, 0.22)
-    } else if part == 6 {
+    } else if matches!(part, 6 | 8 | 9) {
         let c = mix(GOLD, PINK, 0.5 + 0.5 * (p.y * 12.0 + p.x * 9.0).sin());
         mix(c, CREAM, smooth(0.3, 0.85, noise(p.scale(10.0))) * 0.55)
     } else if part == 7 {

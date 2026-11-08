@@ -1,3 +1,5 @@
+mod shaders;
+mod techniques;
 mod triangle;
 
 use minifb::{Key, Window, WindowOptions};
@@ -25,7 +27,7 @@ fn load_design(index: usize) -> Result<(Vec<Triangle>, Vec3, f64), String> {
     let mut triangles = Vec::new();
     let mut vertices = Vec::new();
     for path in DESIGN_PARTS[index] {
-        let mesh = Mesh::from_obj(path)?;
+        let mesh = Mesh::geometry_from_obj(path)?;
         vertices.extend(mesh.vertices.iter().copied());
         triangles.extend(mesh.get_triangles().into_iter().map(|mut t| {
             t.color = 0xFFFFFF;
@@ -47,6 +49,10 @@ fn load_design(index: usize) -> Result<(Vec<Triangle>, Vec3, f64), String> {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--capture" || arg == "--capture-techniques") {
+        capture_previews();
+        return;
+    }
     let mut window = Window::new(
         "Cuerpos celestes - SOLARIA [SOLIDO]",
         WINDOW_WIDTH,
@@ -60,6 +66,11 @@ fn main() {
     let mut angle_x = 0.0f64;
     let mut automatic = true;
     let mut wireframe = false;
+    let mut shaders_enabled = true;
+    let mut mode = techniques::Mode::Crystal;
+    let mut post = 0;
+    let mut post_source = Vec::new();
+    let mut dissolve = 0.5f64;
     let mut buffer = vec![0u32; WINDOW_WIDTH * WINDOW_HEIGHT];
     let mut depth = vec![0.0; buffer.len()];
     let start = Instant::now();
@@ -85,9 +96,39 @@ fn main() {
         if window.is_key_pressed(Key::T, minifb::KeyRepeat::No) {
             wireframe = !wireframe;
         }
+        if window.is_key_pressed(Key::S, minifb::KeyRepeat::No) {
+            shaders_enabled = !shaders_enabled;
+        }
+        for (key, next) in [
+            Key::F1,
+            Key::F2,
+            Key::F3,
+            Key::F4,
+            Key::F5,
+            Key::F6,
+            Key::F7,
+        ]
+        .into_iter()
+        .zip(techniques::Mode::ALL)
+        {
+            if window.is_key_pressed(key, minifb::KeyRepeat::No) {
+                mode = next;
+                shaders_enabled = true;
+                wireframe = false;
+            }
+        }
+        if window.is_key_pressed(Key::P, minifb::KeyRepeat::No) {
+            post = (post + 1) % 4;
+        }
         let now = start.elapsed().as_secs_f64();
         let dt = (now - previous).min(0.1);
         previous = now;
+        if window.is_key_down(Key::Minus) {
+            dissolve = (dissolve - dt * 0.3).max(0.0);
+        }
+        if window.is_key_down(Key::Equal) {
+            dissolve = (dissolve + dt * 0.3).min(1.01);
+        }
         if automatic {
             angle_y += dt * 0.8;
         } else {
@@ -105,15 +146,23 @@ fn main() {
             }
         }
         window.set_title(&format!(
-            "Cuerpos celestes - {} [{}] [{}]",
+            "Cuerpos celestes - {} [{}] [{}] [{}] discard={:.2}",
             DESIGNS[selected],
-            if wireframe { "WIRE" } else { "SOLIDO" },
-            if automatic { "AUTO" } else { "MANUAL" }
+            if wireframe {
+                "WIRE"
+            } else if shaders_enabled && (selected < 3 || mode != techniques::Mode::Crystal) {
+                mode.name()
+            } else {
+                "SOLIDO"
+            },
+            if automatic { "AUTO" } else { "MANUAL" },
+            techniques::POST_NAMES[post],
+            dissolve
         ));
-        buffer.fill(0x000000);
+        buffer.fill(if shaders_enabled { 0x190D29 } else { 0 });
         depth.fill(0.0);
         let (triangles, center, radius) = &loaded;
-        let scale = WINDOW_WIDTH as f64 * 0.38 / radius.max(0.001);
+        let scale = fit_scale(*radius);
         let (cos_y, sin_y) = (angle_y.cos(), angle_y.sin());
         let (cos_x, sin_x) = (angle_x.cos(), angle_x.sin());
         for triangle in triangles {
@@ -126,6 +175,10 @@ fn main() {
                     y.y * sin_x + y.z * cos_x - 8.0,
                 )
             };
+            let rotate = |v: Vec3| {
+                let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
+                Vec3::new(y.x, y.y * cos_x - y.z * sin_x, y.y * sin_x + y.z * cos_x)
+            };
             let rendered = Triangle::new(
                 transform(triangle.v1),
                 transform(triangle.v2),
@@ -134,6 +187,33 @@ fn main() {
             );
             if wireframe {
                 dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
+            } else if shaders_enabled && (selected < 3 || mode != techniques::Mode::Crystal) {
+                let local = [triangle.v1, triangle.v2, triangle.v3];
+                let world = [rendered.v1, rendered.v2, rendered.v3];
+                let normals = triangle.normals.map(rotate);
+                let teaching = techniques::FaceShader::new(mode, world, normals, local, dissolve);
+                raster_shader(
+                    &mut buffer,
+                    &mut depth,
+                    WINDOW_WIDTH,
+                    WINDOW_HEIGHT,
+                    &rendered,
+                    scale,
+                    400.0,
+                    300.0,
+                    |w| {
+                        if mode != techniques::Mode::Crystal {
+                            return teaching.shade(w);
+                        }
+                        shaders::shade(
+                            selected,
+                            triangle.part,
+                            shaders::interpolate(local, w),
+                            shaders::interpolate(normals, w),
+                            shaders::interpolate(world, w),
+                        )
+                    },
+                );
             } else {
                 dibujar_triangulo_relleno(
                     &mut buffer,
@@ -147,15 +227,125 @@ fn main() {
                 );
             }
         }
+        techniques::postprocess(&mut buffer, &mut post_source, WINDOW_WIDTH, post);
         window
             .update_with_buffer(&buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
             .unwrap();
     }
 }
 
+// Headless captures use the same CPU rasterizer and fragment shaders as the viewer.
+fn capture_previews() {
+    let out = std::path::Path::new("assets/previews");
+    std::fs::create_dir_all(out).unwrap();
+    for index in 0..3 {
+        let modes = if std::env::args().any(|arg| arg == "--capture-techniques") {
+            techniques::Mode::ALL.to_vec()
+        } else {
+            vec![techniques::Mode::Crystal]
+        };
+        for mode in modes {
+            let pixels = shader_preview_mode(index, false, mode);
+            let size = 800 * 600 * 3;
+            let mut bmp = vec![0u8; 54];
+            bmp[..2].copy_from_slice(b"BM");
+            bmp[2..6].copy_from_slice(&((54 + size) as u32).to_le_bytes());
+            bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+            bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+            bmp[18..22].copy_from_slice(&800i32.to_le_bytes());
+            bmp[22..26].copy_from_slice(&600i32.to_le_bytes());
+            bmp[26..28].copy_from_slice(&1u16.to_le_bytes());
+            bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
+            for row in pixels.chunks(800).rev() {
+                for &pixel in row {
+                    bmp.extend([pixel as u8, (pixel >> 8) as u8, (pixel >> 16) as u8]);
+                }
+            }
+            let suffix = if mode == techniques::Mode::Crystal {
+                String::new()
+            } else {
+                format!("_{:?}", mode).to_lowercase()
+            };
+            let path = out.join(format!("{}{suffix}.bmp", DESIGNS[index].to_lowercase()));
+            std::fs::write(&path, bmp).unwrap();
+            println!("{}", path.display());
+        }
+    }
+}
+
+fn fit_scale(radius: f64) -> f64 {
+    // Fit a bounding sphere at distance 13, including its nearest surface.
+    let radius = radius.max(0.001);
+    WINDOW_HEIGHT as f64 * 0.43 * (CAMERA_Z + 8.0 - radius).max(0.1) / (CAMERA_Z * radius)
+}
+
+#[cfg(test)]
+fn shader_preview(index: usize, reverse: bool) -> Vec<u32> {
+    shader_preview_mode(index, reverse, techniques::Mode::Crystal)
+}
+
+fn shader_preview_mode(index: usize, reverse: bool, mode: techniques::Mode) -> Vec<u32> {
+    let (mut triangles, center, radius) = load_design(index).unwrap();
+    if reverse {
+        triangles.reverse();
+    }
+    let mut pixels = vec![0x190D29; 800 * 600];
+    let mut depth = vec![0.0; pixels.len()];
+    for t in triangles {
+        let local = [t.v1, t.v2, t.v3];
+        let world = local.map(|v| v.sub(center).add(Vec3::new(0.0, 0.0, -8.0)));
+        let transformed = Triangle::new(world[0], world[1], world[2], 0);
+        let teaching = techniques::FaceShader::new(mode, world, t.normals, local, 0.5);
+        raster_shader(
+            &mut pixels,
+            &mut depth,
+            800,
+            600,
+            &transformed,
+            fit_scale(radius),
+            400.0,
+            300.0,
+            |w| {
+                if mode != techniques::Mode::Crystal {
+                    return teaching.shade(w);
+                }
+                shaders::shade(
+                    index,
+                    t.part,
+                    shaders::interpolate(local, w),
+                    shaders::interpolate(t.normals, w),
+                    shaders::interpolate(world, w),
+                )
+            },
+        );
+    }
+    pixels
+}
+
 #[cfg(test)]
 mod viewer_tests {
     use super::*;
+
+    #[test]
+    fn procedural_previews_are_colored_and_order_independent() {
+        for index in 0..3 {
+            let pixels = shader_preview(index, false);
+            let reversed = shader_preview(index, true);
+            // Shared triangle edges can differ by one quantization level.
+            let differences = pixels.iter().zip(&reversed).filter(|(a, b)| a != b).count();
+            assert!(differences < 30, "{}: {differences}", DESIGNS[index]);
+            let colors = pixels.into_iter().collect::<std::collections::HashSet<_>>();
+            assert!(colors.len() > 100, "{}", DESIGNS[index]);
+            let mesh = Mesh::geometry_from_obj(DESIGN_PARTS[index][0]).unwrap();
+            assert!(mesh.materials.is_empty());
+            assert!(
+                mesh.face_normals
+                    .iter()
+                    .all(|ids| ids.iter().all(Option::is_some))
+            );
+            assert!(mesh.get_triangles().iter().any(|t| t.part != 0));
+        }
+    }
 
     #[test]
     fn all_designs_load_and_render_solid() {

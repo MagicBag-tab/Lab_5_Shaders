@@ -15,18 +15,31 @@ pub struct Mesh {
     pub faces: Vec<(usize, usize, usize)>,
     pub face_materials: Vec<Option<String>>,
     pub materials: HashMap<String, u32>,
+    pub normals: Vec<Vec3>,
+    pub face_normals: Vec<[Option<usize>; 3]>,
+    pub face_objects: Vec<String>,
 }
 impl Mesh {
     pub fn from_obj(path: &str) -> Result<Self, String> {
+        Self::load_obj(path, true)
+    }
+    pub fn geometry_from_obj(path: &str) -> Result<Self, String> {
+        Self::load_obj(path, false)
+    }
+    fn load_obj(path: &str, materials_enabled: bool) -> Result<Self, String> {
         let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
         let mut mesh = Self {
             vertices: vec![],
             faces: vec![],
             face_materials: vec![],
             materials: HashMap::new(),
+            normals: vec![],
+            face_normals: vec![],
+            face_objects: vec![],
         };
         let mut material = None;
         let mut seen = HashSet::new();
+        let mut object = String::new();
         for line in text.lines() {
             let mut tokens = line.split('#').next().unwrap_or("").split_whitespace();
             match tokens.next() {
@@ -41,7 +54,20 @@ impl Mesh {
                     }
                     mesh.vertices.push(Vec3::new(v[0], v[1], v[2]));
                 }
-                Some("mtllib") => {
+                Some("vn") => {
+                    let values = tokens
+                        .map(str::parse::<f64>)
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|e| e.to_string())?;
+                    if values.len() != 3 || values.iter().any(|v| !v.is_finite()) {
+                        return Err("Normal invalida".into());
+                    }
+                    mesh.normals
+                        .push(Vec3::new(values[0], values[1], values[2]).normalize());
+                }
+                Some("o") => object = tokens.collect::<Vec<_>>().join(" "),
+                Some("g") => object = tokens.collect::<Vec<_>>().join(" "),
+                Some("mtllib") if materials_enabled => {
                     for name in tokens {
                         let file = Path::new(path)
                             .parent()
@@ -75,7 +101,24 @@ impl Mesh {
                 }
                 Some("usemtl") => material = Some(tokens.collect::<Vec<_>>().join(" ")),
                 Some("f") => {
+                    let tokens = tokens.collect::<Vec<_>>();
+                    let mut normals = [None; 3];
+                    for (slot, token) in tokens.iter().take(3).enumerate() {
+                        if let Some(raw) = token.split('/').nth(2).filter(|s| !s.is_empty()) {
+                            let n = raw.parse::<isize>().map_err(|e| e.to_string())?;
+                            let i = if n < 0 {
+                                mesh.normals.len() as isize + n
+                            } else {
+                                n - 1
+                            };
+                            if n == 0 || i < 0 || i as usize >= mesh.normals.len() {
+                                return Err("Indice de normal fuera de rango".into());
+                            }
+                            normals[slot] = Some(i as usize);
+                        }
+                    }
                     let ids = tokens
+                        .into_iter()
                         .map(|t| {
                             let n = t
                                 .split('/')
@@ -109,6 +152,8 @@ impl Mesh {
                     if seen.insert((key, material.clone())) {
                         mesh.faces.push((ids[0], ids[1], ids[2]));
                         mesh.face_materials.push(material.clone());
+                        mesh.face_normals.push(normals);
+                        mesh.face_objects.push(object.clone());
                     }
                 }
                 _ => {}
@@ -121,7 +166,7 @@ impl Mesh {
             .iter()
             .enumerate()
             .map(|(i, &(a, b, c))| {
-                Triangle::new(
+                let mut triangle = Triangle::new(
                     self.vertices[a],
                     self.vertices[b],
                     self.vertices[c],
@@ -130,7 +175,25 @@ impl Mesh {
                         .and_then(|n| self.materials.get(n))
                         .copied()
                         .unwrap_or(BASE_COLOR),
-                )
+                );
+                let face_normal = triangle
+                    .v2
+                    .sub(triangle.v1)
+                    .cross(triangle.v3.sub(triangle.v1))
+                    .normalize();
+                triangle.normals =
+                    self.face_normals[i].map(|n| n.map(|n| self.normals[n]).unwrap_or(face_normal));
+                let name = self.face_objects[i].to_lowercase();
+                triangle.part = if name.contains("corona") {
+                    1
+                } else if name.contains("luna") && !name.contains("planeta") {
+                    2
+                } else if name.contains("anillo") {
+                    3
+                } else {
+                    0
+                };
+                triangle
             })
             .collect()
     }
@@ -237,6 +300,22 @@ pub fn dibujar_triangulo_relleno(
     ox: f64,
     oy: f64,
 ) {
+    raster_shader(buffer, depth, width, height, t, s, ox, oy, |_| {
+        Some(t.color)
+    });
+}
+
+pub fn raster_shader(
+    buffer: &mut [u32],
+    depth: &mut [f64],
+    width: usize,
+    height: usize,
+    t: &Triangle,
+    s: f64,
+    ox: f64,
+    oy: f64,
+    shader: impl Fn([f64; 3]) -> Option<u32>,
+) {
     if width == 0
         || height == 0
         || width
@@ -246,7 +325,23 @@ pub fn dibujar_triangulo_relleno(
         return;
     }
     let polygon = recortar(t);
+    let ab = t.v2.sub(t.v1);
+    let ac = t.v3.sub(t.v1);
+    let aa = ab.dot(ab);
+    let bb = ab.dot(ac);
+    let cc = ac.dot(ac);
+    let det = aa * cc - bb * bb;
+    if det.abs() < 1e-20 {
+        return;
+    }
+    let bary = |v: Vec3| {
+        let av = v.sub(t.v1);
+        let b = (cc * av.dot(ab) - bb * av.dot(ac)) / det;
+        let c = (aa * av.dot(ac) - bb * av.dot(ab)) / det;
+        [1.0 - b - c, b, c]
+    };
     for i in 1..polygon.len().saturating_sub(1) {
+        let attributes = [polygon[0], polygon[i], polygon[i + 1]].map(bary);
         let p = [polygon[0], polygon[i], polygon[i + 1]].map(|v| proyectar(v, s, ox, oy));
         if p.iter()
             .any(|v| !v.0.is_finite() || !v.1.is_finite() || !v.2.is_finite())
@@ -301,8 +396,16 @@ pub fn dibujar_triangulo_relleno(
                 let q = w[0] * p[0].2 + w[1] * p[1].2 + w[2] * p[2].2;
                 let index = y * width + x;
                 if q > depth[index] {
-                    depth[index] = q;
-                    buffer[index] = t.color;
+                    let weights = std::array::from_fn(|j| {
+                        (0..3)
+                            .map(|k| w[k] * p[k].2 * attributes[k][j])
+                            .sum::<f64>()
+                            / q
+                    });
+                    if let Some(color) = shader(weights) {
+                        depth[index] = q;
+                        buffer[index] = color;
+                    }
                 }
             }
         }
@@ -379,10 +482,19 @@ pub struct Triangle {
     pub v2: Vec3,
     pub v3: Vec3,
     pub color: u32,
+    pub normals: [Vec3; 3],
+    pub part: u8,
 }
 
 impl Triangle {
     pub fn new(v1: Vec3, v2: Vec3, v3: Vec3, color: u32) -> Self {
-        Triangle { v1, v2, v3, color }
+        Triangle {
+            v1,
+            v2,
+            v3,
+            color,
+            normals: [Vec3::new(0.0, 0.0, 1.0); 3],
+            part: 0,
+        }
     }
 }

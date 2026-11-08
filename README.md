@@ -1,4 +1,98 @@
-# Lab 6 - Carga de Modelo OBJ
+# Lab 5 — Cuerpos celestes: fase de shaders obligatorios
+
+## Comparación de técnicas de la presentación de shaders
+
+`src/techniques.rs` adapta los conceptos de la presentación a este rasterizador
+en CPU. Los modelos de iluminación utilizan la misma base lavanda y la misma
+luz para que la diferencia visible provenga del cálculo y la interpolación.
+
+| Tecla | Modo | Cálculo |
+|---|---|---|
+| `F1` | Cristal original | Shaders artísticos de los tres cuerpos obligatorios; extras aún blancos |
+| `F2` | Flat | Normal geométrica y luz una vez por cara; color constante en el triángulo |
+| `F3` | Gouraud | Luz y especular por vértice; interpolación del color con perspectiva |
+| `F4` | Phong | Normal interpolada y normalizada; difuso y especular por fragmento con vector reflejado |
+| `F5` | Toon | Tres bandas de luz y borde oscuro según normal/cámara |
+| `F6` | Terreno fBm | Cuatro octavas de value noise determinista, océano, costa, terreno y nieve con smoothstep |
+| `F7` | Disolución | Descarte según ruido; borde dorado; los fragmentos descartados no escriben Z |
+| `-` / `=` | Umbral de disolución | Mantener pulsada la tecla para disminuir/aumentar; valor en el título |
+| `P` | Postprocesado | Normal → grises → inversión → bordes Sobel → normal |
+
+`F2`–`F7` funcionan con los seis modelos. Seleccionar un modo activa el sombreado
+y sale de wireframe. Se conservan `1`–`6`, `S`, `T`, espacio y flechas.
+El postprocesado recorre el framebuffer CPU después de dibujar la escena; Sobel
+lee una copia del frame para evitar modificar los vecinos mientras los procesa.
+`mix`, `smoothstep`, ruido y fBm calculan patrones locales, sin imágenes ni MTL.
+La disolución es un recorte geométrico aparente, no transparencia real.
+
+Para generar 21 capturas reales (siete modos por cada cuerpo obligatorio):
+
+```powershell
+cargo run --release -- --capture-techniques
+```
+
+Se guardan en `assets/previews/`, con sufijos `_flat`, `_gouraud`, `_phong`,
+`_toon`, `_terrain` y `_dissolve`. El modo cristal conserva el nombre sin sufijo.
+Las capturas fijan el umbral de disolución en 0.5, sin postprocesado.
+
+Esta implementación cubre sombreado, funciones de forma, ruido, descarte y
+postprocesado de la presentación. Wrapping, filtrado y mipmaps quedan fuera
+porque el laboratorio usa patrones procedurales sin texturas. No se implementó
+desplazamiento de vértices en esta fase.
+
+Renderer Rust en CPU con minifb. Los modelos actuales están en `assets/*.obj`;
+los `.blend` editables están junto a ellos. El visor ignora los archivos MTL:
+los colores, patrones y reflejos se calculan en `src/shaders.rs`, sin texturas.
+
+Ejecutar desde la raíz con `cargo run --release`.
+
+| Tecla | Acción actual |
+|---|---|
+| `1`, `2`, `3` | Solaria, Lunaria y Aurelia con shaders |
+| `4`, `5`, `6` | Ocularis, Labyrinthia y Vortex, todavía monocromáticos |
+| `S` | Activar/desactivar shaders para comparar con el sólido blanco |
+| `T` | Alternar sólido y wireframe |
+| `ESPACIO` | Rotación automática/manual |
+| Flechas | Rotar en modo manual |
+| `ESC` | Salir |
+
+Capas de color de esta fase:
+
+| Pieza | Capas procedurales |
+|---|---|
+| Solaria | Base durazno, regiones coral con ruido de baja frecuencia, células doradas con ruido de mayor frecuencia, filamentos crema sobre los límites de las células y acabado nacarado. Color emisivo independiente del difuso. |
+| Corona | Oro, mezcla menta, franjas claras y brillo nacarado. |
+| Lunaria | Base lavanda, minerales violetas, depresiones y bordes circulares de cráteres simulados por color, vetas menta y destellos dorados. |
+| Luna | Base violeta gris, variación mineral, cuencas oscuras, bordes crema y acabado pulido propio. |
+| Aurelia | Base lavanda, bandas rosa por latitud, perturbación por ruido, bandas azules/crema, tormenta ovalada y nubes claras. |
+| Anillos | Franjas radiales oro/menta/crema, huecos por descarte de fragmentos y brillo. Comparten Z-buffer con la esfera. |
+
+El acabado de vidrio se simula con especular blanco, tinte según la orientación
+respecto a la cámara y realce Fresnel del borde. Las superficies son opacas:
+no hay refracción ni transparencia física. Los patrones usan posiciones locales;
+las normales OBJ rotan con la geometría y se interpolan con corrección de
+perspectiva, incluso al recortar contra el plano cercano. El ruido es determinista.
+
+Capturas reales del framebuffer CPU, a 800 × 600, sin abrir ventana:
+
+```powershell
+cargo run --release -- --capture
+```
+
+Resultados: `assets/previews/solaria.bmp`, `lunaria.bmp` y `aurelia.bmp`.
+La cámara queda frontal y sin animación para facilitar comparaciones. Son
+capturas del rasterizador del programa, no renders de Blender.
+
+Verificación: `cargo fmt --check`, `cargo check`, `cargo test`. Las pruebas
+incluyen los seis OBJ, normales, independencia del orden de dibujo y variación
+de color en los tres shaders. Los extras quedan pendientes de revisión de esta fase;
+su aceptación como planetas adicionales depende del docente.
+
+---
+
+## Documentación histórica de la base del Lab 6
+
+La descripción y los controles siguientes corresponden al visor original de la nave.
 
 Renderizador de una nave OBJ escrito en Rust con minifb. Incluye rotación automática y manual, y dos modos de visualización:
 

@@ -3,7 +3,7 @@ import os
 import bpy
 
 ASSETS = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'assets'))
-for name, expected in [('ocularis', 12696), ('labyrinthia', 7416)]:
+for name, expected in [('ocularis', 12696), ('labyrinthia', 7416), ('lunaria', 5488)]:
     bpy.ops.wm.open_mainfile(filepath=os.path.join(ASSETS, name + '.blend'))
     meshes = [obj for obj in bpy.context.scene.objects if obj.type == 'MESH']
     for obj in meshes:

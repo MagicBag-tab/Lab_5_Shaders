@@ -16,12 +16,37 @@ const DESIGNS: [&str; 6] = [
     "VORTEX",
 ];
 const DESIGN_PARTS: [&[&str]; 6] = [
-    &["assets/solaria.obj"],
-    &["assets/lunaria.obj"],
-    &["assets/aurelia.obj"],
-    &["assets/ocularis.obj"],
-    &["assets/labyrinthia.obj"],
-    &["assets/vortex.obj"],
+    &[
+        "assets/models/solaria_esfera.obj",
+        "assets/models/solaria_corona.obj",
+    ],
+    &[
+        "assets/models/lunaria_planeta.obj",
+        "assets/models/lunaria_luna.obj",
+    ],
+    &[
+        "assets/models/aurelia_planeta.obj",
+        "assets/models/aurelia_anillo_interior.obj",
+        "assets/models/aurelia_anillo_exterior.obj",
+    ],
+    &[
+        "assets/models/ocularis_cuerpo.obj",
+        "assets/models/ocularis_iris.obj",
+        "assets/models/ocularis_arco_superior.obj",
+        "assets/models/ocularis_arco_inferior.obj",
+    ],
+    &[
+        "assets/models/labyrinthia_creciente.obj",
+        "assets/models/labyrinthia_fragmento_1.obj",
+        "assets/models/labyrinthia_fragmento_2.obj",
+        "assets/models/labyrinthia_fragmento_3.obj",
+    ],
+    &[
+        "assets/models/vortex_cascaron_superior.obj",
+        "assets/models/vortex_cascaron_inferior.obj",
+        "assets/models/vortex_nucleo.obj",
+        "assets/models/vortex_anillo.obj",
+    ],
 ];
 
 fn load_design(index: usize) -> Result<(Vec<Triangle>, Vec3, f64), String> {
@@ -75,6 +100,7 @@ fn main() {
     let mut dissolve = 0.5f64;
     let mut buffer = vec![0u32; WINDOW_WIDTH * WINDOW_HEIGHT];
     let mut depth = vec![0.0; buffer.len()];
+    let mut glass = Transparency::new(buffer.len());
     let start = Instant::now();
     let mut previous = 0.0;
     let mut animation_time = 0.0;
@@ -180,75 +206,95 @@ fn main() {
         ));
         buffer.fill(if shaders_enabled { 0x190D29 } else { 0 });
         depth.fill(0.0);
+        glass.clear();
         let (triangles, center, radius) = &loaded;
         let scale = fit_scale(*radius);
         let (cos_y, sin_y) = (angle_y.cos(), angle_y.sin());
         let (cos_x, sin_x) = (angle_x.cos(), angle_x.sin());
         let motions: [_; 10] =
             std::array::from_fn(|part| motion::Motion::at(selected, part as u8, animation_time));
-        for triangle in triangles {
-            let motion = motions[triangle.part as usize];
-            let transform = |v: Vec3| {
-                let v = v.sub(*center);
-                let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
-                Vec3::new(
-                    y.x,
-                    y.y * cos_x - y.z * sin_x,
-                    y.y * sin_x + y.z * cos_x - 8.0,
-                )
-            };
-            let rotate = |v: Vec3| {
-                let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
-                Vec3::new(y.x, y.y * cos_x - y.z * sin_x, y.y * sin_x + y.z * cos_x)
-            };
-            let rendered = Triangle::new(
-                transform(motion.position(triangle.v1)),
-                transform(motion.position(triangle.v2)),
-                transform(motion.position(triangle.v3)),
-                0xFFFFFF,
-            );
-            if wireframe {
-                dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
-            } else if shaders_enabled {
-                let local = [triangle.v1, triangle.v2, triangle.v3];
-                let world = [rendered.v1, rendered.v2, rendered.v3];
-                let normals = triangle.normals.map(|v| rotate(motion.normal(v)));
-                let teaching = techniques::FaceShader::new(mode, world, normals, local, dissolve);
-                raster_shader(
-                    &mut buffer,
-                    &mut depth,
-                    WINDOW_WIDTH,
-                    WINDOW_HEIGHT,
-                    &rendered,
-                    scale,
-                    400.0,
-                    300.0,
-                    |w| {
-                        if mode != techniques::Mode::Crystal {
-                            return teaching.shade(w);
-                        }
-                        shaders::shade(
-                            selected,
-                            triangle.part,
-                            shaders::interpolate(local, w),
-                            shaders::interpolate(normals, w),
-                            shaders::interpolate(world, w),
-                        )
-                    },
+        for pass in 0..2 {
+            for triangle in triangles {
+                let transparent = shaders_enabled
+                    && !wireframe
+                    && mode == techniques::Mode::Crystal
+                    && shaders::is_glass(selected, triangle.part);
+                if transparent != (pass == 1) {
+                    continue;
+                }
+                let motion = motions[triangle.part as usize];
+                let transform = |v: Vec3| {
+                    let v = v.sub(*center);
+                    let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
+                    Vec3::new(
+                        y.x,
+                        y.y * cos_x - y.z * sin_x,
+                        y.y * sin_x + y.z * cos_x - 8.0,
+                    )
+                };
+                let rotate = |v: Vec3| {
+                    let y = Vec3::new(v.x * cos_y + v.z * sin_y, v.y, -v.x * sin_y + v.z * cos_y);
+                    Vec3::new(y.x, y.y * cos_x - y.z * sin_x, y.y * sin_x + y.z * cos_x)
+                };
+                let rendered = Triangle::new(
+                    transform(motion.position(triangle.v1)),
+                    transform(motion.position(triangle.v2)),
+                    transform(motion.position(triangle.v3)),
+                    0xFFFFFF,
                 );
-            } else {
-                dibujar_triangulo_relleno(
-                    &mut buffer,
-                    &mut depth,
-                    WINDOW_WIDTH,
-                    WINDOW_HEIGHT,
-                    &rendered,
-                    scale,
-                    400.0,
-                    300.0,
-                );
+                if wireframe {
+                    dibujar_triangulo(&mut buffer, WINDOW_WIDTH, &rendered, scale, 400.0, 300.0);
+                } else if shaders_enabled {
+                    let local = [triangle.v1, triangle.v2, triangle.v3];
+                    let world = [rendered.v1, rendered.v2, rendered.v3];
+                    let normals = triangle.normals.map(|v| rotate(motion.normal(v)));
+                    let basis = [
+                        Vec3::new(1.0, 0.0, 0.0),
+                        Vec3::new(0.0, 1.0, 0.0),
+                        Vec3::new(0.0, 0.0, 1.0),
+                    ]
+                    .map(|v| rotate(motion.normal(v)));
+                    let teaching =
+                        techniques::FaceShader::new(mode, world, normals, local, dissolve);
+                    raster_rgba(
+                        &mut buffer,
+                        &mut depth,
+                        WINDOW_WIDTH,
+                        WINDOW_HEIGHT,
+                        &rendered,
+                        scale,
+                        400.0,
+                        300.0,
+                        if transparent { Some(&mut glass) } else { None },
+                        |w| {
+                            if mode != techniques::Mode::Crystal {
+                                return teaching.shade(w).map(|c| (c, 1.0));
+                            }
+                            shaders::material(
+                                selected,
+                                triangle.part,
+                                shaders::interpolate(local, w),
+                                shaders::interpolate(normals, w),
+                                shaders::interpolate(world, w),
+                                basis,
+                            )
+                        },
+                    );
+                } else {
+                    dibujar_triangulo_relleno(
+                        &mut buffer,
+                        &mut depth,
+                        WINDOW_WIDTH,
+                        WINDOW_HEIGHT,
+                        &rendered,
+                        scale,
+                        400.0,
+                        300.0,
+                    );
+                }
             }
         }
+        glass.composite(&mut buffer);
         techniques::postprocess(&mut buffer, &mut post_source, WINDOW_WIDTH, post);
         window
             .update_with_buffer(&buffer, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -331,41 +377,57 @@ fn shader_preview_frame(
     }
     let mut pixels = vec![0x190D29; 800 * 600];
     let mut depth = vec![0.0; pixels.len()];
-    for t in triangles {
-        let motion = motion::Motion::at(index, t.part, seconds);
-        let local = [t.v1, t.v2, t.v3];
-        let world = local.map(|v| {
-            motion
-                .position(v)
-                .sub(center)
-                .add(Vec3::new(0.0, 0.0, -8.0))
-        });
-        let normals = t.normals.map(|v| motion.normal(v));
-        let transformed = Triangle::new(world[0], world[1], world[2], 0);
-        let teaching = techniques::FaceShader::new(mode, world, normals, local, 0.5);
-        raster_shader(
-            &mut pixels,
-            &mut depth,
-            800,
-            600,
-            &transformed,
-            fit_scale(radius),
-            400.0,
-            300.0,
-            |w| {
-                if mode != techniques::Mode::Crystal {
-                    return teaching.shade(w);
-                }
-                shaders::shade(
-                    index,
-                    t.part,
-                    shaders::interpolate(local, w),
-                    shaders::interpolate(normals, w),
-                    shaders::interpolate(world, w),
-                )
-            },
-        );
+    let mut glass = Transparency::new(pixels.len());
+    for pass in 0..2 {
+        for t in &triangles {
+            let transparent = mode == techniques::Mode::Crystal && shaders::is_glass(index, t.part);
+            if transparent != (pass == 1) {
+                continue;
+            }
+            let motion = motion::Motion::at(index, t.part, seconds);
+            let local = [t.v1, t.v2, t.v3];
+            let world = local.map(|v| {
+                motion
+                    .position(v)
+                    .sub(center)
+                    .add(Vec3::new(0.0, 0.0, -8.0))
+            });
+            let normals = t.normals.map(|v| motion.normal(v));
+            let basis = [
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ]
+            .map(|v| motion.normal(v));
+            let transformed = Triangle::new(world[0], world[1], world[2], 0);
+            let teaching = techniques::FaceShader::new(mode, world, normals, local, 0.5);
+            raster_rgba(
+                &mut pixels,
+                &mut depth,
+                800,
+                600,
+                &transformed,
+                fit_scale(radius),
+                400.0,
+                300.0,
+                if transparent { Some(&mut glass) } else { None },
+                |w| {
+                    if mode != techniques::Mode::Crystal {
+                        return teaching.shade(w).map(|c| (c, 1.0));
+                    }
+                    shaders::material(
+                        index,
+                        t.part,
+                        shaders::interpolate(local, w),
+                        shaders::interpolate(normals, w),
+                        shaders::interpolate(world, w),
+                        basis,
+                    )
+                },
+            );
+        }
     }
+    glass.composite(&mut pixels);
     pixels
 }
 
@@ -409,13 +471,26 @@ mod viewer_tests {
                     .iter()
                     .all(|ids| ids.iter().all(Option::is_some))
             );
-            assert!(mesh.get_triangles().iter().any(|t| t.part != 0));
+            assert!(load_design(index).unwrap().0.iter().any(|t| t.part != 0));
         }
     }
 
     #[test]
     fn all_designs_load_and_render_solid() {
         for index in 0..DESIGNS.len() {
+            assert!(DESIGN_PARTS[index].len() >= 2);
+            for path in DESIGN_PARTS[index] {
+                let source = std::fs::read_to_string(path).unwrap();
+                assert!(
+                    !source.lines().any(|line| matches!(
+                        line.split_whitespace().next(),
+                        Some("mtllib" | "usemtl")
+                    )),
+                    "Material reference in {path}"
+                );
+                let mesh = Mesh::geometry_from_obj(path).unwrap();
+                assert!(!mesh.faces.is_empty(), "Empty piece {path}");
+            }
             let (triangles, center, radius) = load_design(index).unwrap();
             assert!(radius.is_finite() && radius > 0.0);
             let mut pixels = vec![0; 128 * 128];

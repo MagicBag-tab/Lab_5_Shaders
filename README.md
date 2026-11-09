@@ -1,199 +1,195 @@
-# Lab 5 — Cuerpos celestes: fase de shaders obligatorios
+# Lab 5 — Shaders de cuerpos celestes
 
-## Movimiento de accesorios
+Software renderer en Rust y CPU con minifb. Dibuja tres cuerpos esféricos
+obligatorios (estrella, planeta rocoso y gigante gaseoso) y tres diseños extra.
+Todos los colores, patrones, ruido, iluminación y efectos se calculan mediante
+shaders procedurales: el visor no carga texturas ni materiales MTL.
 
-`src/motion.rs` aplica transformaciones rígidas independientes a los accesorios:
-corona de Solaria (giro frontal), luna de Lunaria (órbita alrededor del eje Y),
-anillos de Aurelia y Vórtex (precesión lenta), fragmentos de Labyrinthia
-(flotación con tres fases distintas) y núcleo de Vórtex (giro propio).
-Ocularis conserva su montaje para mantener iris y arcos alineados.
+[Repositorio del laboratorio](https://github.com/MagicBag-tab/Lab_5_Shaders)
 
-El visor inicia con la vista fija y los accesorios animados. `G` activa/desactiva
-el giro general; `A` pausa/reanuda únicamente los accesorios. `ESPACIO` pausa
-ambos movimientos y conserva esas preferencias al reanudar. `R` restaura la vista
-frontal y detiene el giro general. Las flechas permiten inspeccionar el conjunto
-en cualquier momento. Todas las velocidades,
-incluidas las flechas, usan tiempo transcurrido; el reloj se conserva al cambiar
-de cuerpo. Las normales reciben la misma rotación que su pieza y los patrones
-mantienen sus coordenadas locales originales. El encuadre incluye una esfera
-conservadora para la trayectoria completa y el desplazamiento de los fragmentos.
+## Ejecutar
 
-Capturar un instante de la animación sin abrir ventana:
+Instalar Rust estable con soporte de la edición 2024. Desde la raíz:
 
 ```powershell
-cargo run --release -- --capture --time=8
+cargo run --release
 ```
 
-El tiempo predeterminado es cero, que conserva el montaje original. Las capturas
-usan vista frontal fija; solo los accesorios avanzan al instante solicitado.
-Cada ejecución reemplaza las capturas del mismo nombre en `assets/previews/`.
+El binario predeterminado es `lab_6_carga_de_modelo`, nombre heredado de la base.
+Blender y Python no son necesarios para ejecutar el visor: los OBJ ya se incluyen.
 
-## Comparación de técnicas de la presentación de shaders
+## Capturas reales del renderer
 
-`src/techniques.rs` adapta los conceptos de la presentación a este rasterizador
-en CPU. Los modelos de iluminación utilizan la misma base lavanda y la misma
-luz para que la diferencia visible provenga del cálculo y la interpolación.
+Imágenes de 800 × 600 obtenidas del framebuffer CPU, con los mismos shaders y
+rasterizador que usa la ventana. Vista frontal en tiempo cero, sin postprocesado.
+No son renders de Blender ni imágenes conceptuales.
 
-| Tecla | Modo | Cálculo |
-|---|---|---|
-| `F1` | Cristal | Shaders artísticos de los seis cuerpos y sus accesorios |
-| `F2` | Flat | Normal geométrica y luz una vez por cara; color constante en el triángulo |
-| `F3` | Gouraud | Luz y especular por vértice; interpolación del color con perspectiva |
-| `F4` | Phong | Normal interpolada y normalizada; difuso y especular por fragmento con vector reflejado |
-| `F5` | Toon | Tres bandas de luz y borde oscuro según normal/cámara |
-| `F6` | Terreno fBm | Cuatro octavas de value noise determinista, océano, costa, terreno y nieve con smoothstep |
-| `F7` | Disolución | Descarte según ruido; borde dorado; los fragmentos descartados no escriben Z |
-| `-` / `=` | Umbral de disolución | Mantener pulsada la tecla para disminuir/aumentar; valor en el título |
-| `P` | Postprocesado | Normal → grises → inversión → bordes Sobel → normal |
+### Solaria — estrella esférica
 
-`F2`–`F7` funcionan con los seis modelos. Seleccionar un modo activa el sombreado
-y sale de wireframe. Se conservan `1`–`6`, `S`, `T`, espacio y flechas.
-El postprocesado recorre el framebuffer CPU después de dibujar la escena; Sobel
-lee una copia del frame para evitar modificar los vecinos mientras los procesa.
-`mix`, `smoothstep`, ruido y fBm calculan patrones locales, sin imágenes ni MTL.
-La disolución es un recorte geométrico aparente, no transparencia real.
+![Solaria: esfera cálida y corona independiente](assets/previews/solaria.png)
 
-Para generar 42 capturas reales (siete modos por cada uno de los seis cuerpos):
+### Lunaria — planeta rocoso esférico y luna
 
-```powershell
-cargo run --release -- --capture-techniques
-```
+![Lunaria: minerales y cráteres con luna independiente](assets/previews/lunaria.png)
 
-Se guardan en `assets/previews/`, con sufijos `_flat`, `_gouraud`, `_phong`,
-`_toon`, `_terrain` y `_dissolve`. El modo cristal conserva el nombre sin sufijo.
-Las capturas fijan el umbral de disolución en 0.5, sin postprocesado.
+### Aurelia — gigante gaseoso esférico con anillos
 
-Esta implementación cubre sombreado, funciones de forma, ruido, descarte y
-postprocesado de la presentación. Wrapping, filtrado y mipmaps quedan fuera
-porque el laboratorio usa patrones procedurales sin texturas. No se implementó
-desplazamiento de vértices en esta fase.
+![Aurelia: bandas turbulentas y anillos independientes](assets/previews/aurelia.png)
 
-Renderer Rust en CPU con minifb. Los modelos actuales están en `assets/*.obj`;
-los `.blend` editables están junto a ellos. El visor ignora los archivos MTL:
-los colores, patrones y reflejos se calculan en `src/shaders.rs`, sin texturas.
+### Ocularis — planeta extra con forma de ojo
 
-Ejecutar desde la raíz con `cargo run --release`.
+![Ocularis: cuerpo de cristal, iris y arcos independientes](assets/previews/ocularis.png)
 
-| Tecla | Acción actual |
+### Labyrinthia — planeta extra con forma de creciente
+
+![Labyrinthia: creciente tridimensional con fragmentos independientes](assets/previews/labyrinthia.png)
+
+### Vórtex — planeta extra dividido
+
+![Vórtex: cascarones separados con núcleo y anillo](assets/previews/vortex.png)
+
+Ocularis, Labyrinthia y Vórtex cuentan como los tres planetas extra del
+laboratorio, según la confirmación recibida. Los tres cuerpos obligatorios
+utilizan geometría esférica. La captura de Lunaria muestra su luna separada y
+la de Aurelia muestra los anillos pasando delante y detrás del planeta.
+
+### Comparación de técnicas de sombreado
+
+Capturas de Lunaria con la misma vista frontal y luz. Los modos `F2`–`F7`
+permiten comparar las técnicas de la presentación sobre la misma geometría.
+
+| Flat (`F2`): luz por cara | Gouraud (`F3`): luz por vértice |
 |---|---|
-| `1`, `2`, `3` | Solaria, Lunaria y Aurelia con shaders |
-| `4`, `5`, `6` | Ocularis, Labyrinthia y Vortex con shaders |
-| `S` | Activar/desactivar shaders para comparar con el sólido blanco |
-| `T` | Alternar sólido y wireframe |
-| `ESPACIO` | Pausa/reanuda las animaciones |
-| `G` | Activa/desactiva el giro general (inicia apagado) |
-| `A` | Activa/desactiva la animación independiente de accesorios |
-| `R` | Vuelve a la vista frontal y detiene el giro general |
-| Flechas | Rotar la vista en cualquier momento |
-| `ESC` | Salir |
+| ![Lunaria Flat](assets/previews/lunaria_flat.png) | ![Lunaria Gouraud](assets/previews/lunaria_gouraud.png) |
 
-Capas de color de esta fase:
-
-| Pieza | Capas procedurales |
+| Phong (`F4`): luz por fragmento | Toon (`F5`): bandas de iluminación |
 |---|---|
-| Solaria | Base durazno, regiones coral con ruido de baja frecuencia, células doradas con ruido de mayor frecuencia, filamentos crema sobre los límites de las células y acabado nacarado. Color emisivo independiente del difuso. |
-| Corona | Oro, mezcla menta, franjas claras y brillo nacarado. |
-| Lunaria | Base lavanda, minerales violetas, depresiones y bordes circulares de cráteres simulados por color, vetas menta y destellos dorados. |
-| Luna | Base violeta gris, variación mineral, cuencas oscuras, bordes crema y acabado pulido propio. |
-| Aurelia | Base lavanda, bandas rosa por latitud, perturbación por ruido, bandas azules/crema, tormenta ovalada y nubes claras. |
-| Anillos | Franjas radiales oro/menta/crema, huecos por descarte de fragmentos y brillo. Comparten Z-buffer con la esfera. |
-| Ocularis | Base lavanda/rosa, variaciones suaves crema, vetas doradas y acabado especular/Fresnel. Iris separado con base menta, filamentos radiales violetas, vetas oro, borde oscuro y pupila central. Arcos con oro, rosa, crema y reflejos. |
-| Labyrinthia | Base rosa/lavanda, caminos ondulados menta, contornos crema, líneas doradas y acabado nacarado. Tres fragmentos separados con oro, rosa, variación crema y brillo. La abertura pertenece a la geometría. |
-| Vórtex | Cascarones con base lavanda, remolinos rosa, regiones crema, filamentos oro y matices menta. Núcleo emisivo con base rosa, ondas crema y crestas doradas. Anillo con franjas y huecos procedurales. |
+| ![Lunaria Phong](assets/previews/lunaria_phong.png) | ![Lunaria Toon](assets/previews/lunaria_toon.png) |
 
-El acabado de vidrio se simula con especular blanco, tinte según la orientación
-respecto a la cámara y realce Fresnel del borde. Las superficies son opacas:
-no hay refracción ni transparencia física. Los patrones usan posiciones locales;
-las normales OBJ rotan con la geometría y se interpolan con corrección de
-perspectiva, incluso al recortar contra el plano cercano. El ruido es determinista.
+| Terreno fBm (`F6`): océano y continentes | Disolución (`F7`): descarte por ruido |
+|---|---|
+| ![Lunaria con terreno procedural](assets/previews/lunaria_terrain.png) | ![Lunaria con disolución y borde dorado](assets/previews/lunaria_dissolve.png) |
 
-Capturas reales del framebuffer CPU, a 800 × 600, sin abrir ventana:
-
-```powershell
-cargo run --release -- --capture
-```
-
-Resultados en `assets/previews/`: `solaria.bmp`, `lunaria.bmp`, `aurelia.bmp`,
-`ocularis.bmp`, `labyrinthia.bmp` y `vortex.bmp`.
-La cámara queda frontal y sin animación para facilitar comparaciones. Son
-capturas del rasterizador del programa, no renders de Blender.
-
-Verificación: `cargo fmt --check`, `cargo check`, `cargo test`. Las pruebas
-incluyen los seis OBJ, normales, independencia del orden de dibujo y variación
-de color en los seis shaders. La aceptación de las siluetas de fantasía como
-planetas adicionales depende del docente.
-
----
-
-## Documentación histórica de la base del Lab 6
-
-La descripción y los controles siguientes corresponden al visor original de la nave.
-
-Renderizador de una nave OBJ escrito en Rust con minifb. Incluye rotación automática y manual, y dos modos de visualización:
-
-- **Esqueleto**: dibuja las aristas de todos los triángulos, incluidas las posteriores.
-- **Pintado**: rellena las superficies con el color difuso del material MTL y aplica iluminación por cara. Un Z-buffer resuelve la visibilidad. Sin material se utiliza el color base `0x87CEEB`.
-
-## Capturas del visor
-
-Capturas reales del área de dibujo de minifb, a 800 × 600 píxeles. Ambas muestran la misma orientación manual: rotación de 0.55 radianes en X y 0.65 radianes en Y. Para fijar esta vista durante la captura se ajustaron temporalmente los valores iniciales; el programa conserva su inicio habitual en modo automático y esqueleto.
-
-### Modo esqueleto
-
-Permite inspeccionar la triangulación y las aristas de la nave.
-
-![Nave completa en modo esqueleto, vista oblicua](assets/Imagen_Esqueleto.png)
-
-### Modo pintado
-
-Muestra las superficies visibles con el material gris del modelo y la iluminación por cara.
-
-![Nave completa en modo pintado, desde el mismo ángulo](assets/Imagen_Pintado.png)
+La disolución se captura con umbral 0.5. Estos modos sustituyen el acabado
+artístico para mostrar cada técnica por separado.
 
 ## Controles
 
 | Tecla | Acción |
-|-------|--------|
-| `ESPACIO` | Cambiar entre rotación automática y manual |
-| `T` | Cambiar entre esqueleto y pintado |
-| `←` / `→` | Rotar en Y en modo manual |
-| `↑` / `↓` | Rotar en X en modo manual |
+|---|---|
+| `1`–`6` | Solaria, Lunaria, Aurelia, Ocularis, Labyrinthia y Vórtex |
+| `F1` | Acabados artísticos propios de cada cuerpo |
+| `F2` / `F3` / `F4` | Flat / Gouraud / Phong |
+| `F5` / `F6` / `F7` | Toon / terreno fBm / disolución |
+| `S` | Activar/desactivar shaders; sólido blanco para inspeccionar geometría |
+| `T` | Alternar sólido y wireframe |
+| `G` | Giro general (apagado al iniciar para distinguir los accesorios) |
+| `A` | Pausar/reanudar accesorios |
+| `ESPACIO` | Pausar/reanudar todas las animaciones |
+| `R` | Vista frontal y giro general apagado |
+| Flechas | Rotar la vista |
+| `-` / `=` | Disminuir/aumentar el umbral de disolución |
+| `P` | Normal → grises → inversión → bordes Sobel |
 | `ESC` | Salir |
 
-## Compilar y ejecutar
+Seleccionar `F1`–`F7` activa shaders y sale de wireframe. El título muestra los
+estados del visor. `F2`–`F7` son modos de comparación aplicables a los seis diseños.
 
-Ejecuta los comandos desde la raíz del proyecto para resolver las rutas de `assets/`.
+## Capas de color de los shaders artísticos
 
-```bash
-cargo build
-cargo run
-cargo run --release
-```
+Cada fila enumera aportes que modifican el color; no cuenta los accesorios como
+capas del cuerpo principal.
 
-## Visibilidad y materiales
+| Cuerpo | Capas identificables |
+|---|---|
+| Solaria | 1. Base durazno. 2. Regiones coral con ruido de baja frecuencia. 3. Células doradas. 4. Filamentos crema. 5. Reflejos y borde nacarado. |
+| Lunaria | 1. Base lavanda. 2. Regiones minerales violetas. 3. Cráteres con cuencas oscuras y bordes claros. 4. Vetas menta. 5. Destellos dorados discretos. |
+| Aurelia | 1. Base lavanda. 2. Bandas rosa. 3. Bandas azul/crema. 4. Turbulencia fBm que deforma las bandas. 5. Tormenta ovalada con remolinos. 6. Nubes claras. |
+| Ocularis | 1. Base lavanda. 2. Regiones rosa. 3. Vetas doradas. 4. Variaciones crema. 5. Reflejos y filamentos internos. |
+| Labyrinthia | 1. Base lavanda/rosa. 2. Caminos menta. 3. Contornos crema. 4. Líneas doradas. 5. Patrones internos y reflejos. |
+| Vórtex | 1. Base lavanda. 2. Remolinos rosa. 3. Regiones crema. 4. Filamentos dorados. 5. Matices menta y acabado de vidrio. |
 
-El relleno comparte un Z-buffer entre todas las caras y lo limpia cada fotograma. Con la cámara en `z = 5`, interpola baricéntricamente `1 / (5 - z)` en pantalla: el valor mayor corresponde a la superficie más cercana. Recorta contra una distancia cercana de `0.1` antes de proyectar y limita la rasterización a la ventana. Omite los triángulos degenerados o no finitos.
+La luna tiene un shader propio de minerales y cráteres. El iris combina menta,
+filamentos violetas, vetas oro, borde oscuro y pupila. Los arcos y la corona
+mezclan oro, rosa y crema. Los fragmentos tienen acabado nacarado y el núcleo
+de Vórtex usa ondas luminosas. Los anillos usan franjas radiales y huecos por
+descarte de fragmentos; el Z-buffer resuelve su paso delante y detrás de Aurelia.
 
-El OBJ incluido contiene 730 vértices y 1512 caras, todas triangulares. Hay 756 copias geométricas exactas; el cargador conserva una por material, incluso si la copia usa otros índices u otro orden. El archivo OBJ original se conserva.
+## Modelos y archivos separados
 
-`assets/nave_1.mtl` define un solo material gris (`Kd 0.8 0.8 0.8`), por lo que este modelo no contiene colores distintos por pieza. El cargador conserva `usemtl` por cara; la iluminación es independiente de la selección de color y del índice del triángulo.
+Los archivos usados por el programa están en `assets/models/`:
 
-La inspección geométrica detectó 128 caras de área prácticamente nula en el archivo original, incluidas sus copias, 32 aristas con seis incidencias y 32 aristas de dos incidencias con orientación inconsistente. No se reparó la topología del modelo. Se mantienen ambas orientaciones visibles, sin backface culling.
+| Diseño | Archivos OBJ independientes |
+|---|---|
+| Solaria | `solaria_esfera.obj`, `solaria_corona.obj` |
+| Lunaria | `lunaria_planeta.obj`, `lunaria_luna.obj` |
+| Aurelia | `aurelia_planeta.obj`, `aurelia_anillo_interior.obj`, `aurelia_anillo_exterior.obj` |
+| Ocularis | `ocularis_cuerpo.obj`, `ocularis_iris.obj`, `ocularis_arco_superior.obj`, `ocularis_arco_inferior.obj` |
+| Labyrinthia | `labyrinthia_creciente.obj`, `labyrinthia_fragmento_1.obj`, `labyrinthia_fragmento_2.obj`, `labyrinthia_fragmento_3.obj` |
+| Vórtex | `vortex_cascaron_superior.obj`, `vortex_cascaron_inferior.obj`, `vortex_nucleo.obj`, `vortex_anillo.obj` |
 
-El cargador requiere OBJ triangulados y devuelve un error ante otros polígonos, en lugar de crear abanicos incorrectos sobre caras cóncavas.
+Son 19 mallas trianguladas con posiciones y normales. Los accesorios conservan
+sus coordenadas de montaje; no necesitan desplazamientos extra al cargarlos.
+Los OBJ activos no contienen `mtllib` ni `usemtl`. El visor solo necesita las
+piezas separadas de `assets/models/`; no depende de los OBJ combinados,
+los archivos Blender ni la nave antigua. Las pruebas de rotación usan Lunaria.
+El generador antiguo `generate_models` tampoco se usa para estas mallas finales.
 
-## Verificación
+## Renderizado y movimiento
 
-```bash
+`src/triangle.rs` carga la geometría y sus grupos, recorta el plano cercano y
+rasteriza en CPU. Interpola posiciones y normales con corrección de perspectiva.
+El ruido es determinista y las posiciones locales mantienen los patrones
+adheridos al modelo. No se usan backface culling ni mapas de ruido almacenados.
+
+`src/shaders.rs` calcula los acabados artísticos. Lunaria usa bump mapping por
+diferencias finitas del ruido, iluminación mate y brillo tenue. Es relieve
+aparente: no modifica la silueta. Aurelia conserva normales suaves y nubes fBm.
+Solaria tiene una base emisiva que no depende del sombreado difuso de un planeta.
+
+El vidrio combina especular blanco y borde Fresnel con transparencia alfa real.
+Se dibujan primero las piezas opacas y después se componen las transparentes con
+weighted blended OIT: prueban el Z-buffer opaco, pero no escriben en él. Cinco
+muestras de un campo procedural local simulan detalles atrapados en el interior.
+El espesor y la composición son aproximaciones artísticas: no hay refracción ni
+absorción física, ni intersección exacta con el volumen de cada forma.
+
+`src/techniques.rs` implementa Flat por cara, Gouraud por vértice y Phong por
+fragmento, además de Toon, terreno con cuatro octavas de fBm, descarte y
+postprocesado. No se implementan texturas, mipmaps ni desplazamiento de vértices.
+
+`src/motion.rs` mueve independientemente la corona, la luna, los anillos, los
+fragmentos y el núcleo. Las normales reciben la misma rotación que su pieza.
+Las velocidades usan tiempo transcurrido y el encuadre incluye la trayectoria
+de los accesorios. Ocularis conserva la alineación de iris y arcos.
+
+## Regenerar capturas y verificar
+
+```powershell
 cargo fmt --check
 cargo check
 cargo test
+cargo run --release -- --capture-techniques
 ```
 
-Las pruebas cubren profundidad en perspectiva, independencia del orden de dibujo, ambos órdenes de vértices, recorte cercano, degenerados, caras fuera de pantalla, buffers inválidos, materiales, índices OBJ negativos y cuatro rotaciones de la nave.
+La captura del framebuffer no necesita abrir una ventana. Para convertir todas
+las capturas BMP a PNG desde PowerShell en Windows:
 
-Para comprobar visualmente el resultado, ejecuta el visor, pulsa `T`, cambia a manual con `ESPACIO` y usa las flechas para observar el frente, los lados y la parte posterior.
+```powershell
+Add-Type -AssemblyName System.Drawing
+Get-ChildItem assets/previews -Filter *.bmp | ForEach-Object {
+    $frame = [System.Drawing.Image]::FromFile($_.FullName)
+    try {
+        $frame.Save([System.IO.Path]::ChangeExtension($_.FullName, '.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $frame.Dispose() }
+}
+```
 
-## Repositorio
+La conversión solo cambia el formato, sin agregar efectos ni alterar el diseño.
+Para capturar accesorios en otro instante: `cargo run --release -- --capture --time=8`.
+Para los siete modos de los seis diseños: `cargo run --release -- --capture-techniques`.
+Las capturas reemplazan los archivos del mismo nombre.
 
-[Código fuente en GitHub](https://github.com/MagicBag-tab/lab_6_carga_de_modelo)
+Las pruebas cubren carga de los seis diseños, normales, geometría separada sin
+MTL, profundidad en perspectiva, recorte, degenerados, descarte, composición de
+vidrio, variación de color y conservación del encuadre durante la animación.

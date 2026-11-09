@@ -328,6 +328,68 @@ pub fn raster_shader(
     oy: f64,
     shader: impl Fn([f64; 3]) -> Option<u32>,
 ) {
+    raster_rgba(buffer, depth, width, height, t, s, ox, oy, None, |w| {
+        shader(w).map(|c| (c, 1.0))
+    });
+}
+
+// Weighted blended order-independent transparency. Opaque geometry is drawn first.
+pub struct Transparency {
+    colors: Vec<[f64; 3]>,
+    weights: Vec<f64>,
+    reveal: Vec<f64>,
+}
+impl Transparency {
+    pub fn new(size: usize) -> Self {
+        Self {
+            colors: vec![[0.0; 3]; size],
+            weights: vec![0.0; size],
+            reveal: vec![1.0; size],
+        }
+    }
+    pub fn clear(&mut self) {
+        self.colors.fill([0.0; 3]);
+        self.weights.fill(0.0);
+        self.reveal.fill(1.0);
+    }
+    fn add(&mut self, index: usize, color: u32, alpha: f64, q: f64) {
+        let a = alpha.clamp(0.0, 1.0);
+        let weight = a * (q * 13.0).powi(3).clamp(0.01, 30.0);
+        for (channel, shift) in [16, 8, 0].into_iter().enumerate() {
+            self.colors[index][channel] += ((color >> shift) & 255) as f64 * weight;
+        }
+        self.weights[index] += weight;
+        self.reveal[index] *= 1.0 - a;
+    }
+    pub fn composite(&self, buffer: &mut [u32]) {
+        for (i, pixel) in buffer.iter_mut().enumerate() {
+            if self.weights[i] <= 0.0 {
+                continue;
+            }
+            let mut result = 0;
+            for (channel, shift) in [16, 8, 0].into_iter().enumerate() {
+                let back = ((*pixel >> shift) & 255) as f64;
+                let front = self.colors[i][channel] / self.weights[i];
+                let c = front * (1.0 - self.reveal[i]) + back * self.reveal[i];
+                result |= (c.round().clamp(0.0, 255.0) as u32) << shift;
+            }
+            *pixel = result;
+        }
+    }
+}
+
+pub fn raster_rgba(
+    buffer: &mut [u32],
+    depth: &mut [f64],
+    width: usize,
+    height: usize,
+    t: &Triangle,
+    s: f64,
+    ox: f64,
+    oy: f64,
+    mut transparency: Option<&mut Transparency>,
+    shader: impl Fn([f64; 3]) -> Option<(u32, f64)>,
+) {
     if width == 0
         || height == 0
         || width
@@ -414,9 +476,13 @@ pub fn raster_shader(
                             .sum::<f64>()
                             / q
                     });
-                    if let Some(color) = shader(weights) {
-                        depth[index] = q;
-                        buffer[index] = color;
+                    if let Some((color, alpha)) = shader(weights) {
+                        if let Some(layers) = transparency.as_deref_mut() {
+                            layers.add(index, color, alpha, q);
+                        } else {
+                            depth[index] = q;
+                            buffer[index] = color;
+                        }
                     }
                 }
             }

@@ -1,5 +1,45 @@
 use super::*;
 
+#[test]
+fn glass_composition_is_order_independent_and_respects_opaque_depth() {
+    let a = Triangle::new(
+        Vec3::new(-1.0, -1.0, 0.0),
+        Vec3::new(1.0, -1.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        0,
+    );
+    let draw = |reverse: bool, blocked: bool| {
+        let mut pixels = vec![0x101010; 32 * 32];
+        let mut depth = vec![if blocked { 10.0 } else { 0.0 }; pixels.len()];
+        let mut glass = Transparency::new(pixels.len());
+        let mut colors = [0xFF0000, 0x0000FF];
+        if reverse {
+            colors.reverse();
+        }
+        for color in colors {
+            raster_rgba(
+                &mut pixels,
+                &mut depth,
+                32,
+                32,
+                &a,
+                10.0,
+                16.0,
+                16.0,
+                Some(&mut glass),
+                |_| Some((color, 0.4)),
+            );
+        }
+        assert!(depth.iter().all(|&d| d == if blocked { 10.0 } else { 0.0 }));
+        glass.composite(&mut pixels);
+        pixels
+    };
+    let pixels = draw(false, false);
+    assert_eq!(pixels, draw(true, false));
+    assert_ne!(pixels[16 * 32 + 16], 0x101010);
+    assert!(draw(false, true).iter().all(|&c| c == 0x101010));
+}
+
 fn render(triangles: &[Triangle]) -> (Vec<u32>, Vec<f64>) {
     let mut pixels = vec![0; 64 * 64];
     let mut depth = vec![0.0; pixels.len()];
@@ -77,16 +117,12 @@ fn clipping_degenerate_and_invalid_buffers() {
 }
 
 #[test]
-fn actual_model_materials_duplicates_and_rotations() {
-    let mesh = Mesh::from_obj("assets/nave_1.obj").unwrap();
-    assert_eq!(mesh.vertices.len(), 730);
-    assert_eq!(mesh.faces.len(), 756);
-    assert_eq!(mesh.materials["Material"], 0xCCCCCC);
-    assert!(
-        mesh.face_materials
-            .iter()
-            .all(|m| m.as_deref() == Some("Material"))
-    );
+fn actual_planet_geometry_and_rotations() {
+    let mesh = Mesh::geometry_from_obj("assets/models/lunaria_planeta.obj").unwrap();
+    assert!(!mesh.vertices.is_empty());
+    assert!(!mesh.faces.is_empty());
+    assert!(mesh.materials.is_empty());
+    assert!(mesh.face_materials.iter().all(Option::is_none));
     let center = mesh.calcular_centro();
     for (ax, ay) in [(0.0_f64, 0.0_f64), (0.4, 0.8), (1.2, 2.3), (2.8, 4.7)] {
         let transform = |v: Vec3| {

@@ -121,14 +121,17 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
                 let veins = 1.0 - smooth(0.012, 0.05, (noise(p.scale(8.0)) - 0.5).abs());
                 let c = mix(LAVENDER, [0.31, 0.17, 0.49], smooth(0.35, 0.7, minerals));
                 let c = mix(c, [0.29, 0.24, 0.40], smooth(0.64, 0.76, crater) * 0.65);
-                let c = mix(c, MINT, veins * 0.7);
+                let c = mix(c, MINT, veins * 0.22);
                 let (basin, rim) = craters(p);
                 let c = mix(mix(c, [0.31, 0.23, 0.43], basin * 0.65), CREAM, rim * 0.3);
-                mix(c, GOLD, smooth(0.79, 0.89, noise(p.scale(70.0))))
+                mix(c, GOLD, smooth(0.79, 0.89, noise(p.scale(70.0))) * 0.3)
             }
             2 => {
-                let warp = noise(p.scale(5.0));
-                let latitude = p.y * 19.0 + (warp - 0.5) * 4.0;
+                let warp = crate::techniques::fbm(p.scale(4.0));
+                let storm_distance = ((p.x - 0.35) / 0.28).powi(2) + ((p.y + 0.22) / 0.14).powi(2);
+                let eddy = (1.0 - smooth(0.0, 3.0, storm_distance))
+                    * ((p.y + 0.22).atan2(p.x - 0.35) * 3.0 + storm_distance * 4.0).sin();
+                let latitude = p.y * 22.0 + (warp - 0.5) * 7.0 + eddy * 1.7;
                 let bands = latitude.sin() * 0.5 + 0.5;
                 let c = mix(LAVENDER, PINK, bands);
                 let c = mix(
@@ -143,7 +146,11 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
                     [0.95, 0.65, 0.46],
                     (1.0 - smooth(0.6, 1.2, storm)) * smooth(0.0, 0.5, p.z),
                 );
-                mix(c, CREAM, smooth(0.65, 0.84, noise(p.scale(17.0))) * 0.4)
+                mix(
+                    c,
+                    CREAM,
+                    smooth(0.52, 0.74, crate::techniques::fbm(p.scale(13.0))) * 0.55,
+                )
             }
             3 => {
                 let regions = noise(p.scale(2.5));
@@ -182,23 +189,141 @@ pub fn shade(design: usize, part: u8, local: Vec3, normal: Vec3, position: Vec3)
             _ => LAVENDER,
         }
     };
+    let rocky = design == 1;
+    let gaseous = design == 2 && part == 0;
     let diffuse = if emissive {
         1.0
+    } else if rocky {
+        0.24 + 0.76 * n.dot(light).max(0.0)
     } else {
         0.52 + 0.48 * n.dot(light).max(0.0)
     };
     let half = light.add(view).normalize();
-    let spec = n.dot(half).max(0.0).powi(90);
+    let spec = n.dot(half).max(0.0).powi(if rocky {
+        12
+    } else if gaseous {
+        22
+    } else {
+        90
+    });
     let fresnel = (1.0 - n.dot(view).max(0.0)).powi(3);
     let c = base.map(|v| v * diffuse);
     let c = mix(
         c,
         mix(MINT, PINK, 0.5 + 0.5 * (p.y * 4.0).sin()),
-        fresnel * 0.6,
+        fresnel
+            * if rocky {
+                0.0
+            } else if gaseous {
+                0.08
+            } else {
+                0.6
+            },
     );
-    let c = mix(c, [1.0, 1.0, 1.0], (spec * 0.92 + fresnel * 0.22).min(1.0));
+    let strength = if rocky {
+        0.035
+    } else if gaseous {
+        0.12
+    } else {
+        0.92
+    };
+    let c = mix(
+        c,
+        [1.0, 1.0, 1.0],
+        (spec * strength
+            + fresnel
+                * if rocky {
+                    0.0
+                } else if gaseous {
+                    0.02
+                } else {
+                    0.22
+                })
+        .min(1.0),
+    );
     let c = c.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u32);
     Some(c[0] << 16 | c[1] << 8 | c[2])
+}
+
+pub fn is_glass(design: usize, part: u8) -> bool {
+    matches!(design, 0 | 3 | 4 | 5) && (part == 0 || design == 4 && matches!(part, 6 | 8 | 9))
+}
+
+/// Rotation columns map object-local directions into camera/world coordinates.
+pub fn material(
+    design: usize,
+    part: u8,
+    p: Vec3,
+    mut n: Vec3,
+    world: Vec3,
+    basis: [Vec3; 3],
+) -> Option<(u32, f64)> {
+    if design == 1 {
+        // Finite-difference bump mapping changes lighting, not mesh positions.
+        let q = p.scale(18.0);
+        let e = 0.025;
+        let value = noise(q);
+        let gradient = Vec3::new(
+            noise(q.add(Vec3::new(e, 0.0, 0.0))) - value,
+            noise(q.add(Vec3::new(0.0, e, 0.0))) - value,
+            noise(q.add(Vec3::new(0.0, 0.0, e))) - value,
+        )
+        .scale(1.0 / e);
+        let g = basis[0]
+            .scale(gradient.x)
+            .add(basis[1].scale(gradient.y))
+            .add(basis[2].scale(gradient.z));
+        let tangent = g.sub(n.scale(g.dot(n)));
+        n = n.sub(tangent.scale(0.25)).normalize();
+    }
+    let color = shade(design, part, p, n, world)?;
+    if !is_glass(design, part) {
+        return Some((color, 1.0));
+    }
+    let view = Vec3::new(0.0, 0.0, 5.0).sub(world).normalize();
+    let local_view = Vec3::new(view.dot(basis[0]), view.dot(basis[1]), view.dot(basis[2]));
+    let facing = n.normalize().dot(view).abs();
+    let fresnel = (1.0 - facing).powi(3);
+    let mut inside = [0.0; 3];
+    let mut density = 0.0;
+    // A short local ray samples nested filaments beneath the surface. This is
+    // an artistic volume approximation; it does not trace refracted rays.
+    let thickness = match design {
+        0 => 0.65,
+        3 => 0.22,
+        4 => 0.18,
+        _ => 0.10,
+    };
+    for i in 0..5 {
+        let q = p.sub(local_view.scale(thickness * (i as f64 + 1.0) / 5.0));
+        let field = noise(q.scale(7.0));
+        let wave = match design {
+            0 => (q.x * 18.0 + q.y * 13.0 + field * 5.0).sin(),
+            3 => (q.x * 12.0 + q.y * 17.0 + field * 4.0).sin(),
+            4 => (q.y * 17.0 + (q.x * 5.0 + q.z * 3.0).sin() * 2.3 + field * 2.0).sin(),
+            _ => (q.y.atan2(q.x) * 5.0 - (q.x * q.x + q.y * q.y).sqrt() * 13.0 + q.z * 4.0 + field)
+                .sin(),
+        };
+        let d = (1.0 - smooth(0.08, 0.35, wave.abs())) * (1.0 - i as f64 * 0.1);
+        let tint = mix(MINT, PINK, field);
+        for j in 0..3 {
+            inside[j] += tint[j] * d;
+        }
+        density += d;
+    }
+    let surface = [
+        ((color >> 16) & 255) as f64 / 255.0,
+        ((color >> 8) & 255) as f64 / 255.0,
+        (color & 255) as f64 / 255.0,
+    ];
+    let c = if density > 0.001 {
+        mix(surface, inside.map(|v| v / density), 0.38)
+    } else {
+        surface
+    };
+    let c = c.map(|v| ((v * 1.12).clamp(0.0, 1.0) * 255.0).round() as u32);
+    let alpha = (0.40 + 0.40 * fresnel + 0.10 * (density / 5.0)).clamp(0.40, 0.90);
+    Some((c[0] << 16 | c[1] << 8 | c[2], alpha))
 }
 
 pub fn interpolate(values: [Vec3; 3], w: [f64; 3]) -> Vec3 {
